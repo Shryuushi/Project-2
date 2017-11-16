@@ -2,7 +2,11 @@
 var actorChars = {
   "@": Player,
   "o": Coin, // A coin will wobble up and down
-  "=": Lava, "|": Lava, "v": Lava  
+  "=": Lava, "|": Lava, "v": Lava,
+  "u": speedBoost,
+  "t": Door,
+  "r": Enemy,
+  "s": jumpBoost,
 };
 
 function Level(plan) {
@@ -38,6 +42,10 @@ function Level(plan) {
       // Because there is a third case (space ' '), use an "else if" instead of "else"
       else if (ch == "!")
         fieldType = "lava";
+	  else if (ch == "y")
+		  fieldType = "floater";
+	  else if (ch == 'i')
+		  fieldType = "portal";
 
       // "Push" the fieldType, which is a string, onto the gridLine array (at the end).
       gridLine.push(fieldType);
@@ -89,6 +97,27 @@ function Coin(pos) {
 }
 Coin.prototype.type = "coin";
 
+function speedBoost(pos) {
+	this.basePos = this.pos = pos.plus(new Vector(0.2, 0.1));
+	this.size = new Vector(0.6, 0.6);
+	this.bounce = Math.random() * Math.PI * 5;
+}
+speedBoost.prototype.type = "speedBoost";
+
+function Door(pos) {
+	this.basePos = this.pos = pos.plus(new Vector(0, -0.5));
+	this.size = new Vector(0.8, 1.5);
+	this.wiggle = Math.random() * Math.PI * 1;
+}
+Door.prototype.type = "door";
+
+function jumpBoost(pos) {
+	this.basePos = this.pos = pos.plus(new Vector(0.2, 0.1));
+	this.size = new Vector (0.6, 0.6);
+	this.jump = Math.random() * Math.PI * 4;
+}
+jumpBoost.prototype.type = "jumpBoost";
+
 // Lava is initialized based on the character, but otherwise has a
 // size and position
 function Lava(pos, ch) {
@@ -107,6 +136,13 @@ function Lava(pos, ch) {
   }
 }
 Lava.prototype.type = "lava";
+
+function Enemy(pos, ch) {
+	this.pos = pos;
+	this.size = new Vector(1, 1);
+	this.speed = new Vector(4, 0);
+}
+Enemy.prototype.type = "enemy";
 
 // Helper function to easily create an element of a type provided 
 function elt(name, className) {
@@ -283,6 +319,16 @@ Lava.prototype.act = function(step, level) {
     this.speed = this.speed.times(-1);
 };
 
+Enemy.prototype.act = function(step, level) {
+	var newPos = this.pos.plus(this.speed.times(step));
+	if (!level.obstacleAt(newPos, this.size))
+		this.pos = newPos;
+	else if (this.repeatPos)
+		this.pos = this.repeatPos;
+	else
+		this.speed = this.speed.times(-1);
+};
+
 
 var maxStep = 0.05;
 
@@ -303,6 +349,47 @@ Coin.prototype.act = function(step) {
   var wobblePos = Math.sin(this.wobble) * wobbleDist;
   this.pos = this.basePos.plus(new Vector(0, wobblePos));
 };
+
+var bounceSpeed = 15;
+var bounceDist = 0.10;
+speedBoost.prototype.act = function(step) {
+	this.bounce += step * bounceSpeed;
+	var bouncePos = Math.sin(this.bounce) * bounceDist;
+	this.pos = this.basePos.plus(new Vector(0, bouncePos));
+};
+
+var wiggleSpeed = 5, wiggleDist = 0.01;
+Door.prototype.act = function(step) {
+	this.wiggle += step * wiggleSpeed;
+	var wigglePos = Math.sin(this.wiggle) * wiggleDist;
+	this.pos = this.basePos.plus(new Vector(0, wigglePos));
+}
+
+var jumpInc = 10, jumpDist = 0.20;
+jumpBoost.prototype.act = function(step) {
+	this.jump += step * jumpInc;
+	var jumpPos = Math.sin(this.jump) * jumpDist;
+	this.pos = this.basePos.plus(new Vector(0, jumpPos));
+}
+
+var mySound;
+var mySound2;
+var mySound3;
+var mySound4;
+function sound(src) {
+	this.sound = document.createElement("audio");
+	this.sound.src = src;
+	this.sound.setAttribute("preload", "auto");
+	this.sound.setAttribute("controls", "none");
+	this.sound.style.display = "none";
+	document.body.appendChild(this.sound);
+	this.play = function() {
+		this.sound.play();
+	}
+	this.stop = function() {
+		this.sound.pause();
+	}
+}
 
 var maxStep = 0.05;
 
@@ -339,6 +426,9 @@ Player.prototype.moveY = function(step, level, keys) {
   // jump if they are touching some obstacle.
   if (obstacle) {
     level.playerTouched(obstacle);
+	if (obstacle == 'portal') {
+		this.pos = new Vector (5, 10);
+	}
     if (keys.up && this.speed.y > 0)
       this.speed.y = -jumpSpeed;
     else
@@ -363,26 +453,48 @@ Player.prototype.act = function(step, level, keys) {
   }
 };
 
+var playerCollect = 1;
+
 Level.prototype.playerTouched = function(type, actor) {
 
   // if the player touches lava and the player hasn't won
   // Player loses
-  if (type == "lava" && this.status == null) {
+  if (type == "lava" && this.status == null || type == "enemy") {
     this.status = "lost";
     this.finishDelay = 1;
-  } else if (type == "coin") {
+  } else if (type == "coin" || type == "speedBoost" || type == "door" || type == "jumpBoost") {
+		if (type == 'coin') {
+			mySound.play();
+			document.getElementById("coinCollect").value = ("You have collected : " + (playerCollect++));
+		}
+		if (type == 'speedBoost') {
+			playerXSpeed = 13;
+			setTimeout(function() {
+				playerXSpeed = 7;
+			}, 5000);
+			mySound2.play();
+		}
+		if (type == 'jumpBoost') {
+			jumpSpeed = 25;
+			setTimeout(function() {
+				jumpSpeed = 17;
+			}, 5000);
+			mySound4.play();
+		}
     this.actors = this.actors.filter(function(other) {
       return other != actor;
     });
     // If there aren't any coins left, player wins
     if (!this.actors.some(function(actor) {
-           return actor.type == "coin";
+           return actor.type == "door";
          })) {
+	  mySound3.play();
       this.status = "won";
       this.finishDelay = 1;
     }
   }
 };
+
 
 // Arrow key codes for readibility
 var arrowCodes = {37: "left", 38: "up", 39: "right"};
@@ -452,6 +564,10 @@ function runLevel(level, Display, andThen) {
 }
 
 function runGame(plans, Display) {
+	mySound = new sound("http://themushroomkingdom.net/sounds/wav/sm64/sm64_coin.wav");
+	mySound2 = new sound("http://themushroomkingdom.net/sounds/wav/sm64/sm64_1-up.wav");
+	mySound3 = new sound("http://themushroomkingdom.net/sounds/wav/nsmb_pipe.wav");
+	mySound4 = new sound("http://themushroomkingdom.net/sounds/wav/sm64/sm64_blue_coin.wav");
   function startLevel(n) {
     // Create a new level using the nth element of array plans
     // Pass in a reference to Display function, DOMDisplay (in index.html).
